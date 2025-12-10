@@ -1,3 +1,5 @@
+use std::alloc::System;
+
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame, layout::{self, Constraint, Layout}, style::Stylize, text::Line, widgets::{Block, Paragraph}
@@ -16,18 +18,28 @@ fn main() -> color_eyre::Result<()> {
 pub struct App {
     /// Is the application running?
     running: bool,
+    system: sysinfo::System,
+    cpu: Vec<(f64,f32)>
 }
 
 impl App {
     /// Construct a new instance of [`App`].
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            running: true,
+            system: sysinfo::System::new_all(),  // this means fetch all info available
+            cpu: vec![],
+        }
     }
 
     /// Run the application's main loop.
     pub fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         self.running = true;
         while self.running {
+
+            // See: +41:00 @ https://www.youtube.com/watch?v=OkmYsa25pIw
+
+            //self.cpu.
             terminal.draw(|frame| self.render(frame))?;
             self.handle_crossterm_events()?;
         }
@@ -47,9 +59,11 @@ impl App {
             Constraint::Fill(1),
             Constraint::Fill(1),
         ]).areas(frame.area());
+
         frame.render_widget(Block::bordered(), first);
         frame.render_widget(Block::bordered(), second);
         frame.render_widget(Block::bordered(), third);
+
 
     }
 
