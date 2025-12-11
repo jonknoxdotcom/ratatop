@@ -2,8 +2,9 @@ use std::alloc::System;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
-    DefaultTerminal, Frame, layout::{self, Constraint, Layout}, style::{Style, Stylize}, symbols, text::Line, widgets::{Axis, Block, Chart, Dataset, GraphType, Paragraph}
+    DefaultTerminal, Frame, layout::{self, Constraint, Layout, Rect}, style::{Style, Stylize}, symbols, text::Line, widgets::{Axis, Block, Chart, Dataset, GraphType, Paragraph, Row, Table}
 };
+use sysinfo::ProcessesToUpdate;
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -19,7 +20,7 @@ pub struct App {
     /// Is the application running?
     running: bool,
     system: sysinfo::System,
-    cpu: Vec<(f64,f64)>
+    cpu: Vec<(f64, f64)>,
 }
 
 impl App {
@@ -27,7 +28,7 @@ impl App {
     pub fn new() -> Self {
         Self {
             running: true,
-            system: sysinfo::System::new_all(),  // this means fetch all info available
+            system: sysinfo::System::new_all(), // this means fetch all info available
             cpu: vec![],
         }
     }
@@ -37,8 +38,10 @@ impl App {
         self.running = true;
         while self.running {
             self.system.refresh_cpu_all();
+            self.system.refresh_processes(ProcessesToUpdate::All, true);
             terminal.draw(|frame| {
-                self.cpu.push((frame.count() as f64, self.system.global_cpu_usage() as f64));
+                self.cpu
+                    .push((frame.count() as f64, self.system.global_cpu_usage() as f64));
                 self.render(frame)
             })?;
             self.handle_crossterm_events()?;
@@ -53,12 +56,12 @@ impl App {
     /// - <https://docs.rs/ratatui/latest/ratatui/widgets/index.html>
     /// - <https://github.com/ratatui/ratatui/tree/main/ratatui-widgets/examples>
     fn render(&mut self, frame: &mut Frame) {
-
         let [first, second, third] = Layout::vertical([
             Constraint::Percentage(25),
             Constraint::Fill(1),
             Constraint::Fill(1),
-        ]).areas(frame.area());
+        ])
+        .areas(frame.area());
 
         let datasets = vec![
             // Scatter chart
@@ -70,8 +73,12 @@ impl App {
                 .data(&self.cpu),
         ];
 
-        let x_axis = Axis::default().bounds([0f64,self.cpu.len() as f64]).style(Style::default().cyan());
-        let y_axis = Axis::default().bounds([0f64,100f64]).style(Style::default().cyan());
+        let x_axis = Axis::default()
+            .bounds([0f64, self.cpu.len() as f64])
+            .style(Style::default().cyan());
+        let y_axis = Axis::default()
+            .bounds([0f64, 100f64])
+            .style(Style::default().cyan());
 
         let chart = Chart::new(datasets)
             .block(Block::bordered().title("CPU"))
@@ -80,9 +87,32 @@ impl App {
 
         frame.render_widget(chart, first);
         frame.render_widget(Block::bordered(), second);
-        frame.render_widget(Block::bordered(), third);
+        //frame.render_widget(Block::bordered(), third);
 
+        self.render_processes(frame, third);
+    }
 
+    fn render_processes(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        let mut rows: Vec<_> = vec![];
+        for (pid,process) in self.system.processes() {
+            let name = process.name().to_string_lossy().to_string();
+            let cpu = process.cpu_usage();
+            let row = vec![pid.to_string(), name, cpu.to_string()];
+            rows.push(row);
+        }
+        
+        rows.sort_by(|a, b| {
+            let a = a[2].parse::<f32>().unwrap_or(0.0);
+            let b = b[2].parse::<f32>().unwrap_or(0.0);
+            b.partial_cmp(&a).unwrap()
+        });
+
+        let table = Table::new(
+                rows.into_iter().map(Row::new).collect::<Vec<Row>>(), [Constraint::Max(10), Constraint::Min(0)])
+            .block(Block::bordered().title("processes"))
+            .header(Row::new(vec!["PID","Name"]).style(Style::default().bold()));
+
+        frame.render_widget(table, area);
     }
 
     /// Reads the crossterm events and updates the state of [`App`].
@@ -105,10 +135,10 @@ impl App {
     /// Handles the key events and updates the state of [`App`].
     fn on_key_event(&mut self, key: KeyEvent) {
         match (key.modifiers, key.code) {
-                (_, KeyCode::Esc | KeyCode::Char('q'))
-                | (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('C')) => self.quit(),
-                // Add other key handlers here.
-                _ => {}
+            (_, KeyCode::Esc | KeyCode::Char('q'))
+            | (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('C')) => self.quit(),
+            // Add other key handlers here.
+            _ => {}
         }
     }
 
