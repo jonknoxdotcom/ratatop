@@ -2,7 +2,12 @@ use std::alloc::System;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
-    DefaultTerminal, Frame, layout::{self, Constraint, Layout, Rect}, style::{Style, Stylize}, symbols, text::Line, widgets::{Axis, Block, Chart, Dataset, GraphType, Paragraph, Row, Table}
+    layout::{self, Constraint, Layout, Rect},
+    style::{Style, Stylize},
+    symbols,
+    text::Line,
+    widgets::{Axis, Block, Chart, Dataset, GraphType, Paragraph, Row, Table},
+    DefaultTerminal, Frame,
 };
 use sysinfo::ProcessesToUpdate;
 
@@ -37,9 +42,13 @@ impl App {
     pub fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         self.running = true;
         while self.running {
-            self.system.refresh_cpu_all();
-            self.system.refresh_processes(ProcessesToUpdate::All, true);
             terminal.draw(|frame| {
+
+                if frame.count() % 30 == 0 {
+                    self.system.refresh_processes(ProcessesToUpdate::All, true);
+                }
+                self.system.refresh_cpu_all();
+        
                 self.cpu
                     .push((frame.count() as f64, self.system.global_cpu_usage() as f64));
                 self.render(frame)
@@ -94,13 +103,13 @@ impl App {
 
     fn render_processes(&mut self, frame: &mut Frame<'_>, area: Rect) {
         let mut rows: Vec<_> = vec![];
-        for (pid,process) in self.system.processes() {
+        for (pid, process) in self.system.processes() {
             let name = process.name().to_string_lossy().to_string();
             let cpu = process.cpu_usage();
             let row = vec![pid.to_string(), name, cpu.to_string()];
             rows.push(row);
         }
-        
+
         rows.sort_by(|a, b| {
             let a = a[2].parse::<f32>().unwrap_or(0.0);
             let b = b[2].parse::<f32>().unwrap_or(0.0);
@@ -108,9 +117,15 @@ impl App {
         });
 
         let table = Table::new(
-                rows.into_iter().map(Row::new).collect::<Vec<Row>>(), [Constraint::Max(10), Constraint::Min(0)])
-            .block(Block::bordered().title("processes"))
-            .header(Row::new(vec!["PID","Name"]).style(Style::default().bold()));
+            rows.into_iter().map(Row::new).collect::<Vec<Row>>(),
+            [
+                Constraint::Max(10),
+                Constraint::Fill(1),
+                Constraint::Fill(1),
+            ],
+        )
+        .block(Block::bordered().title("processes"))
+        .header(Row::new(vec!["PID", "Name", "CPU"]).style(Style::default().bold()));
 
         frame.render_widget(table, area);
     }
